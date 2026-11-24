@@ -1,6 +1,9 @@
 // Shareable views. Each gets its own URL (/v/<id>) and its own share image.
 export const VIEWS = {
   flow: { title: "Follow the money", short: "Money flow" },
+  pay: { title: "Who pays whom", short: "Who pays whom" },
+  price: { title: "Does paying more draw more agents?", short: "Price" },
+  odds: { title: "Best odds right now", short: "Best odds" },
   overtime: { title: "The market over time", short: "Over time" },
   posters: { title: "Who posts the work", short: "Posters" },
   swarm: { title: "Where agents converge", short: "Swarm" },

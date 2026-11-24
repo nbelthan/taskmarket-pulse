@@ -96,5 +96,42 @@ export function insights(s: Snapshot): Insight[] {
     });
   }
 
+  // 7. Pricing: does reward pull entries?
+  const pk = Math.abs(t.price.rho) >= Math.abs(b.price.rho) ? "tempo" : "base";
+  const pr = s.chains[pk].price;
+  const live = pr.bands.filter((x) => x.tasks >= 5);
+  if (live.length >= 2) {
+    const lo = live[0];
+    const hi = live[live.length - 1];
+    out.push({
+      id: "price",
+      view: "price",
+      kicker: "Does paying more work?",
+      figure: `${int(hi.medianSubs)} vs ${int(lo.medianSubs)}`,
+      text: `median entries on ${CHAINS[pk].name} tasks paying ${hi.label} vs ${lo.label}. Rank correlation between reward and entries: ${pr.rho.toFixed(2)}.`,
+    });
+  }
+
+  // 8. Repeat relationships between posters and winners.
+  const rk = t.pay.completedWithWinner >= b.pay.completedWithWinner ? "tempo" : "base";
+  out.push({
+    id: "repeat",
+    view: "pay",
+    kicker: "Posters going back",
+    figure: pct(s.chains[rk].pay.repeatShare),
+    text: `of completed ${CHAINS[rk].name} tasks went to a wallet the same poster had already picked. ${int(s.chains[rk].pay.winners)} wallets have been picked at least once.`,
+  });
+
+  // 9. Least crowded money.
+  const best = [...t.odds, ...b.odds].sort((x, y) => y.perEntrant - x.perEntrant)[0];
+  if (best)
+    out.push({
+      id: "odds",
+      view: "odds",
+      kicker: "Least crowded money",
+      figure: money(best.perEntrant),
+      text: `per entrant on an open ${money(best.reward)} task with ${int(best.submissions)} entries so far (${best.ref ?? best.id.slice(0, 10)}).`,
+    });
+
   return out;
 }

@@ -12,6 +12,7 @@ import { VIEWS, type ViewId } from "./views";
 export const OG_SIZE = { width: 1200, height: 630 };
 
 const font = (f: string) => readFile(join(process.cwd(), "assets/fonts", f));
+const markData = () => readFile(join(process.cwd(), "assets/taskmarket-mark.png")).then((b) => `data:image/png;base64,${b.toString("base64")}`);
 
 type Card = { headline: [string, string]; stats: { v: string; l: string; hot?: boolean }[]; spark?: number[]; bars?: { v: number; color: string; l: string }[] };
 
@@ -32,6 +33,40 @@ function cardFor(view: ViewId | "home", s: Snapshot): Card {
         ],
         bars: OUTCOMES.map((o) => ({ v: sum((k) => s.chains[k].byOutcome[o].reward), color: OUTCOME_COLOR[o], l: OUTCOME_LABEL[o] })),
       };
+    case "pay": {
+      const k = t.pay.winners >= b.pay.winners ? "tempo" : "base";
+      const p = s.chains[k].pay;
+      return {
+        headline: ["Who pays", "whom."],
+        stats: [
+          { v: int(p.winners), l: `${CHAINS[k].name} wallets picked as winner` },
+          { v: pct(p.repeatShare), l: "picks of a repeat winner", hot: true },
+          { v: money(p.total), l: "completed reward traced" },
+        ],
+      };
+    }
+    case "price": {
+      const bands = t.price.bands.filter((x) => x.tasks > 0);
+      return {
+        headline: ["Does paying more", "work?"],
+        stats: [
+          { v: t.price.rho.toFixed(2), l: "Tempo reward vs entries (rank corr.)" },
+          { v: b.price.rho.toFixed(2), l: "Base reward vs entries (rank corr.)" },
+          { v: `${int(bands.at(-1)?.medianSubs ?? 0)} vs ${int(bands[0]?.medianSubs ?? 0)}`, l: "median entries: top vs bottom band", hot: true },
+        ],
+      };
+    }
+    case "odds": {
+      const top = [...t.odds, ...b.odds].sort((x, y) => y.perEntrant - x.perEntrant)[0];
+      return {
+        headline: ["Best odds", "right now."],
+        stats: [
+          { v: money(top?.perEntrant ?? 0), l: "reward per entrant, best open task", hot: true },
+          { v: int(top?.submissions ?? 0), l: "entries on it so far" },
+          { v: int(t.open.count + b.open.count), l: "open tasks scanned" },
+        ],
+      };
+    }
     case "overtime": {
       const avg = d30.reduce((a, p) => a + p.activeAgents, 0) / (d30.length || 1);
       return {
@@ -103,7 +138,8 @@ function cardFor(view: ViewId | "home", s: Snapshot): Card {
 }
 
 export async function renderCard(view: ViewId | "home", s: Snapshot) {
-  const [serif, serifItalic, sans500, sans700, mono] = await Promise.all([
+  const [mark, serif, serifItalic, sans500, sans700, mono] = await Promise.all([
+    markData(),
     font("InstrumentSerif-Regular.ttf"),
     font("InstrumentSerif-Italic.ttf"),
     font("InterTight-500.ttf"),
@@ -150,7 +186,11 @@ export async function renderCard(view: ViewId | "home", s: Snapshot) {
           ) : null}
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 26, fontSize: 19, color: C.muted }}>
-          <div style={{ display: "flex", fontFamily: "Departure Mono", color: C.cream }}>taskmarket.dev</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, fontFamily: "Departure Mono", color: C.cream }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={mark} width={64} height={64} alt="" style={{ borderRadius: 12 }} />
+            taskmarket.dev
+          </div>
           <div style={{ display: "flex" }}>
             {CHAIN_KEYS.map((k) => CHAINS[k].name).join(" + ")} · data as of {utc(s.asOf)} · unofficial
           </div>

@@ -8,7 +8,8 @@ import { C, CHAIN_COLOR, MODE_COLOR, OUTCOME_COLOR, STATUS_COLOR } from "@/lib/t
 import { compact, int, money, pct, utc } from "@/lib/format";
 import { VIEWS, type ViewId } from "@/lib/views";
 import { FlowSankey } from "./FlowSankey";
-import { AreaChart, BarList, HeatGrid, Hive, Lorenz, StackBar, WeeklyBars } from "./charts";
+import { AreaChart, BarList, HeatGrid, Hive, Lorenz, PriceScatter, StackBar, WeeklyBars } from "./charts";
+import { WalletLookup } from "./WalletLookup";
 import { Ago, ShareButton, Tabs } from "./client";
 import { LiveFeed } from "./LiveFeed";
 
@@ -27,6 +28,9 @@ function Section({ id, kicker, sub, children, source, extra }: { id: ViewId; kic
           {extra}
           <a className="sharebtn" href={`/v/${id}`}>
             Open view
+          </a>
+          <a className="sharebtn" href={`/v/${id}/opengraph-image`} download={`taskmarket-pulse-${id}.png`}>
+            Card
           </a>
           <ShareButton path={`/v/${id}`} title={VIEWS[id].title} />
         </div>
@@ -133,6 +137,189 @@ export function FlowView({ s }: { s: Snapshot }) {
     >
       <Tabs label="Chain" param="chain" tabs={CHAIN_KEYS.map((k) => ({ key: k, label: CHAINS[k].name, content: pane(k) }))} />
     </Section>
+  );
+}
+
+// ------------------------------------------------------------------ posters -> winners
+export function PayView({ s }: { s: Snapshot }) {
+  const pane = (k: ChainKey) => {
+    const p = s.chains[k].pay;
+    return (
+      <div className="panel">
+        <div className="stats3">
+          <div>
+            <b>{int(p.winners)}</b>
+            <span>different wallets picked as top winner</span>
+          </div>
+          <div>
+            <b>{pct(p.repeatShare)}</b>
+            <span>of picks went to a winner the same poster had picked before</span>
+          </div>
+          <div>
+            <b>{pct(p.topWinnerRewardShare)}</b>
+            <span>of completed reward sits with the single most-picked wallet</span>
+          </div>
+        </div>
+        <div className="only-desktop">
+          <FlowSankey flow={p} cols={[0, 2]} colorBySource title={`${CHAINS[k].name}: completed reward from posting wallets to the wallet picked as top winner`} />
+        </div>
+        <div className="only-mobile">
+          <FlowSankey flow={p} cols={[0, 2]} compact colorBySource title={`${CHAINS[k].name}: completed reward from posters to winners`} />
+        </div>
+        <p className="source" style={{ marginTop: 8 }}>
+          Left: the 6 wallets whose completed tasks carried the most reward. Right: the 8 wallets most often holding the top award, then everyone else. Band width = reward of{" "}
+          {int(p.completedWithWinner)} completed {CHAINS[k].name} tasks ({money(p.total)}). A bounty can pay several winners, so a band shows who was picked first, not an exact payout.
+        </p>
+      </div>
+    );
+  };
+  return (
+    <Section
+      id="pay"
+      kicker="02 · Posters to winners"
+      sub="Money flowing from the wallets that post work to the wallets they pick. Do posters keep going back to the same agents, or does the work spread out?"
+      source={
+        <>
+          completed tasks in <Code>/api/tasks</Code>: <Code>requester</Code> → <Code>primaryAward.workerAddress</Code>, weighted by <Code>reward</Code> ÷ 10⁶.
+        </>
+      }
+    >
+      <Tabs label="Chain" tabs={CHAIN_KEYS.map((k) => ({ key: k, label: CHAINS[k].name, content: pane(k) }))} />
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------------ price vs entries
+export function PriceView({ s }: { s: Snapshot }) {
+  const pane = (k: ChainKey) => {
+    const p = s.chains[k].price;
+    const rhoTxt = Math.abs(p.rho) < 0.1 ? "barely related" : p.rho > 0 ? (p.rho > 0.4 ? "clearly related" : "loosely related") : "inversely related";
+    return (
+      <div className="grid2 w32">
+        <div className="panel">
+          <div className="legend">
+            {OUTCOMES.map((o) => (
+              <span key={o}>
+                <i className="swatch" style={{ background: OUTCOME_COLOR[o] }} />
+                {OUTCOME_LABEL[o]}
+              </span>
+            ))}
+            <span>— median per band</span>
+          </div>
+          <PriceScatter points={p.points} colors={OUTCOMES.map((o) => OUTCOME_COLOR[o])} bands={p.bands} label={`${CHAINS[k].name}: reward against submissions for every task`} />
+        </div>
+        <div className="panel">
+          <p style={{ marginTop: 0 }}>
+            On {CHAINS[k].name}, reward and number of entries are <b>{rhoTxt}</b>: rank correlation{" "}
+            <span className="mono" style={{ color: C.paper }}>{p.rho.toFixed(2)}</span> across {int(p.points.length)} tasks.
+          </p>
+          <table className="tbl">
+            <thead>
+              <tr><th>Reward</th><th>Tasks</th><th>Median entries</th><th>Completed*</th></tr>
+            </thead>
+            <tbody>
+              {p.bands.map((b) => (
+                <tr key={b.label}>
+                  <td>{b.label}</td>
+                  <td className="mono">{int(b.tasks)}</td>
+                  <td className="mono">{b.tasks ? int(b.medianSubs) : "—"}</td>
+                  <td className="mono">{b.tasks ? pct(b.completedShare) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="source">*Share of closed tasks (completed, expired or cancelled) in the band that completed.</p>
+        </div>
+      </div>
+    );
+  };
+  return (
+    <Section
+      id="price"
+      kicker="03 · Pricing"
+      sub="Every task as a dot: its reward against how many submissions it drew. If agents follow the money, the cloud rises to the right."
+      source={
+        <>
+          every task in <Code>/api/tasks</Code>: <Code>reward</Code> ÷ 10⁶ against <Code>submissionCount</Code>; Spearman rank correlation. Both axes are logarithmic.
+        </>
+      }
+    >
+      <Tabs label="Chain" param="pchain" tabs={CHAIN_KEYS.map((k) => ({ key: k, label: CHAINS[k].name, content: pane(k) }))} />
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------------ best odds
+export function OddsView({ s }: { s: Snapshot }) {
+  const pane = (k: ChainKey) => {
+    const rows = s.chains[k].odds;
+    return (
+      <div className="panel" style={{ overflowX: "auto" }}>
+        {rows.length ? (
+          <table className="tbl odds">
+            <thead>
+              <tr><th>Task</th><th>Reward</th><th>Entries</th><th>Per entrant*</th><th>Closes in</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((t) => (
+                <tr key={t.id}>
+                  <td>
+                    <a href={`https://taskmarket.dev/tasks/${t.id}`} target="_blank" rel="noopener noreferrer">{t.title}</a>
+                    <div className="muted mono" style={{ fontSize: 11 }}>{t.ref ?? ""} · {t.mode}</div>
+                  </td>
+                  <td className="mono">{money(t.reward)}</td>
+                  <td className="mono">{int(t.submissions)}</td>
+                  <td className="mono" style={{ color: C.paper }}>{money(t.perEntrant)}</td>
+                  <td className="mono">{t.hoursLeft === null ? "—" : t.hoursLeft < 48 ? `${Math.max(0, Math.round(t.hoursLeft))} h` : `${Math.round(t.hoursLeft / 24)} d`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="muted">No open tasks with a reward right now.</p>
+        )}
+        <p className="source">
+          *Reward ÷ (entries + 1): what each entrant would stand to get if the reward were split evenly and you joined now. It is a way to rank open work, not a promise of
+          payout; the poster picks winners. Times are as of {utc(s.asOf)}.
+        </p>
+      </div>
+    );
+  };
+  return (
+    <Section
+      id="odds"
+      kicker="04 · For agents"
+      sub="Open tasks where the reward is large compared with the crowd already there. Most dashboards show the busiest tasks; this shows the least crowded money."
+      source={
+        <>
+          open tasks in <Code>/api/tasks</Code> with <Code>expiryTime</Code> in the future, ranked by <Code>reward</Code> ÷ (<Code>submissionCount</Code> + 1).
+        </>
+      }
+    >
+      <Tabs label="Chain" param="ochain" tabs={CHAIN_KEYS.map((k) => ({ key: k, label: CHAINS[k].name, content: pane(k) }))} />
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------------ wallet lookup
+export function WalletView() {
+  return (
+    <section className="section" id="wallet" aria-labelledby="wallet-h">
+      <div className="sechead">
+        <div>
+          <div className="kicker">Look up</div>
+          <h2 id="wallet-h">Any wallet, in one line</h2>
+          <p className="sub">Paste an address to see what it has posted and won on each chain. Addresses only; nothing here says who is behind one.</p>
+        </div>
+      </div>
+      <div className="panel">
+        <WalletLookup />
+      </div>
+      <p className="source">
+        Source: totals per <Code>requester</Code> and per <Code>primaryAward.workerAddress</Code> on completed tasks, from <Code>/api/tasks</Code>; served from this snapshot at{" "}
+        <a href="/api/wallets">/api/wallets</a>.
+      </p>
+    </section>
   );
 }
 
@@ -246,7 +433,7 @@ export function OverTime({ s }: { s: Snapshot }) {
   return (
     <Section
       id="overtime"
-      kicker="02 · Over time"
+      kicker="05 · Over time"
       sub={`Day by day (UTC). The last day is still in progress.${s.sameAcrossChains.series ? " The API returns the same series for both chain ids, so this is the whole platform." : ""}`}
       source={
         <>
@@ -265,7 +452,7 @@ export function Posters({ s }: { s: Snapshot }) {
   return (
     <Section
       id="posters"
-      kicker="03 · Posters"
+      kicker="06 · Posters"
       sub="How many different wallets post work each week, and how much of the work comes from a few of them."
       source={
         <>
@@ -357,7 +544,7 @@ export function Swarm({ s }: { s: Snapshot }) {
   return (
     <Section
       id="swarm"
-      kicker="04 · Swarm"
+      kicker="07 · Swarm"
       sub="The open tasks drawing the most agents. Each dot is one submission spiralling in on the task; the centre is sized by reward. Tap a task to open it on taskmarket.dev."
       source={
         <>
@@ -379,7 +566,7 @@ export function Outcomes({ s }: { s: Snapshot }) {
   return (
     <Section
       id="outcomes"
-      kicker="05 · Outcomes"
+      kicker="08 · Outcomes"
       sub={s.sameAcrossChains.breakdowns ? "Platform totals from the breakdowns endpoint (it returns the same counts for both chain ids), then each chain from its own task list." : undefined}
       source={
         <>
@@ -422,7 +609,7 @@ export function Rhythm({ s }: { s: Snapshot }) {
   return (
     <Section
       id="rhythm"
-      kicker="06 · Rhythm"
+      kicker="09 · Rhythm"
       sub={`Activity over the last 30 days, by hour of the week (UTC) or by task mode per day. The outlined cell is the busiest.${s.sameAcrossChains.heatmap ? " Same for both chain ids: platform-wide." : ""}`}
       source={
         <>
@@ -449,7 +636,7 @@ export function FeedView({ s }: { s: Snapshot }) {
   return (
     <Section
       id="feed"
-      kicker="07 · Live"
+      kicker="10 · Live"
       sub="The latest events across the market, newest first. Addresses only; no names are attached to wallets."
       source={
         <>
@@ -504,7 +691,10 @@ export function Methods({ s }: { s: Snapshot }) {
           <li>Amounts are integers with 6 decimals (<code>1000000</code> = 1.00 OUSD or USDC) and are shown in dollars.</li>
           <li>Distinct posters per week: unique <code>requester</code> addresses (lower-cased) per ISO week starting Monday 00:00 UTC, by <code>createdAt</code>.</li>
           <li>Outcomes: completed; open; claimed / in review (<code>claimed</code>, <code>worker_selected</code>, <code>pending_approval</code>); expired; cancelled.</li>
-          <li>Winners: <code>primaryAward.workerAddress</code> on completed tasks.</li>
+          <li>Winners: <code>primaryAward.workerAddress</code> on completed tasks. &ldquo;Who pays whom&rdquo; links each completed task&apos;s <code>requester</code> to that wallet, weighted by reward; a repeat pick is a task whose poster had already picked the same winner.</li>
+          <li>Pricing: Spearman rank correlation between <code>reward</code> and <code>submissionCount</code> over every task with a reward; median entries per reward band.</li>
+          <li>Best odds: open tasks whose <code>expiryTime</code> is after the snapshot, ranked by reward ÷ (<code>submissionCount</code> + 1).</li>
+          <li>Wallet lookup: tasks and reward posted per <code>requester</code>, and top awards held per <code>primaryAward.workerAddress</code>, per chain.</li>
           <li>Concentration: Lorenz curve and Gini coefficient over tasks per requester.</li>
           {Object.values(s.sameAcrossChains).some(Boolean) ? (
             <li>
@@ -525,6 +715,11 @@ export function Footer({ s }: { s: Snapshot }) {
   return (
     <footer className="wrap foot">
       <p className="disclaimer">Made for a paid Taskmarket bounty. Not an official Taskmarket product.</p>
+      <div className="signoff">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/taskmarket-mark.png" alt="Taskmarket mark" width={64} height={64} loading="lazy" />
+        <span className="mono" style={{ color: "var(--cream)", fontSize: 15 }}>taskmarket.dev</span>
+      </div>
       <div className="row">
         <span>
           Data as of <span className="mono">{utc(s.asOf)}</span> · from the public API at <span className="mono">api.taskmarket.dev</span>

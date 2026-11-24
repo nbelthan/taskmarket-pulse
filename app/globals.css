@@ -170,3 +170,27 @@ footer.foot .disclaimer { color: var(--cream); font-size: 14px; margin: 0 0 8px;
 footer.foot .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
 .backlink { display: inline-block; margin-top: 6px; font-size: 14px; color: var(--muted); }
+
+/* moving money along flow bands */
+.flowdots path { animation: flowdots 2.4s linear infinite; opacity: 0.85; }
+@keyframes flowdots { to { stroke-dashoffset: -45; } }
+@media (prefers-reduced-motion: reduce) { .flowdots { display: none; } }
+
+.signoff { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+.signoff img { width: 64px; height: 64px; border-radius: 12px; }
+.stats3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0 0 14px; }
+.stats3 div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stats3 b { display: block; font-family: var(--font-mono), monospace; font-weight: 400; font-size: 22px; color: var(--paper); }
+.stats3 span { font-size: 12px; color: var(--muted); }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 9px 8px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.tbl td.mono { white-space: nowrap; }
+.tbl.odds td:first-child { min-width: 220px; }
+.tbl a { text-decoration: none; }
+.tbl a:hover { text-decoration: underline; }
+.lookup { display: flex; gap: 8px; flex-wrap: wrap; }
+.lookup input { flex: 1 1 280px; min-width: 0; background: var(--ground); border: 1px solid var(--line); border-radius: 10px; color: var(--cream); font: inherit; font-family: var(--font-mono), monospace; font-size: 14px; padding: 10px 12px; }
+.lookup input:focus { outline: none; border-color: var(--salmon); }
+.lookup button { appearance: none; border: 0; background: var(--salmon); color: var(--ground); font: inherit; font-weight: 600; padding: 10px 16px; border-radius: 10px; cursor: pointer; }

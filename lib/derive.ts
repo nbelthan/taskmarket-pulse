@@ -168,6 +168,185 @@ export function rewardFlow(tasks: RawTask[], topN = 5): Flow {
   };
 }
 
+export type PayFlow = Flow & {
+  pairs: number;
+  repeatShare: number;
+  completedWithWinner: number;
+  topWinnerRewardShare: number;
+  winners: number;
+};
+
+/**
+ * Who pays whom: reward of completed tasks, from the posting wallet to the wallet
+ * holding the task's primary award. Bounties can split a reward between several
+ * winners, so this shows who was picked first, not exact payouts.
+ */
+export function payFlow(tasks: RawTask[], topPosters = 6, topWinners = 8): PayFlow {
+  const done = tasks.filter((t) => t.status === "completed" && t.primaryAward?.workerAddress);
+  const byP = new Map<string, number>();
+  const byW = new Map<string, number>();
+  const pairN = new Map<string, number>();
+  let total = 0;
+  for (const t of done) {
+    const v = toUnits(t.reward);
+    const p = t.requester.toLowerCase();
+    const w = t.primaryAward!.workerAddress.toLowerCase();
+    byP.set(p, (byP.get(p) ?? 0) + v);
+    byW.set(w, (byW.get(w) ?? 0) + v);
+    pairN.set(`${p}>${w}`, (pairN.get(`${p}>${w}`) ?? 0) + 1);
+    total += v;
+  }
+  const topP = new Set([...byP.entries()].sort((a, b) => b[1] - a[1]).slice(0, topPosters).map(([a]) => a));
+  const topW = new Set([...byW.entries()].sort((a, b) => b[1] - a[1]).slice(0, topWinners).map(([a]) => a));
+  const nodes = new Map<string, FlowNode>();
+  const links = new Map<string, FlowLink>();
+  const add = (id: string, label: string, col: number, kind: string, v: number) => {
+    const n = nodes.get(id) ?? { id, label, col, value: 0, tasks: 0, kind };
+    n.value += v;
+    n.tasks++;
+    nodes.set(id, n);
+  };
+  for (const t of done) {
+    const v = toUnits(t.reward);
+    const p = t.requester.toLowerCase();
+    const w = t.primaryAward!.workerAddress.toLowerCase();
+    const pid = topP.has(p) ? `p:${p}` : "p:others";
+    const wid = topW.has(w) ? `w:${w}` : "w:others";
+    add(pid, topP.has(p) ? shortAddr(t.requester) : `${byP.size - topP.size} other posters`, 0, topP.has(p) ? "poster" : "others", v);
+    add(wid, topW.has(w) ? shortAddr(t.primaryAward!.workerAddress) : `${byW.size - topW.size} other winners`, 2, topW.has(w) ? "winner" : "others", v);
+    const k = `${pid}>${wid}`;
+    const l = links.get(k) ?? { source: pid, target: wid, value: 0, tasks: 0 };
+    l.value += v;
+    l.tasks++;
+    links.set(k, l);
+  }
+  const repeats = [...pairN.values()].reduce((a, n) => a + (n > 1 ? n : 0), 0);
+  const ord = (n: FlowNode) => (n.kind === "others" ? 1e15 : -n.value);
+  const all = [...links.values()];
+  return {
+    nodes: [...nodes.values()].sort((a, b) => a.col - b.col || ord(a) - ord(b)),
+    links: all,
+    direct: all,
+    total,
+    pairs: pairN.size,
+    repeatShare: done.length ? repeats / done.length : 0,
+    completedWithWinner: done.length,
+    topWinnerRewardShare: total ? Math.max(0, ...byW.values()) / total : 0,
+    winners: byW.size,
+  };
+}
+
+export type PriceBand = { label: string; min: number; max: number; tasks: number; medianSubs: number; completedShare: number; diedShare: number };
+export type Price = {
+  /** [reward, submissions, outcome index] per task with a reward. */
+  points: [number, number, number][];
+  bands: PriceBand[];
+  /** Spearman rank correlation between reward and submissions. */
+  rho: number;
+};
+
+const BANDS: [string, number, number][] = [
+  ["under $1", 0, 1],
+  ["$1–5", 1, 5],
+  ["$5–20", 5, 20],
+  ["$20–100", 20, 100],
+  ["$100+", 100, Infinity],
+];
+
+function ranks(xs: number[]): number[] {
+  const idx = xs.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0]);
+  const r = new Array<number>(xs.length);
+  for (let i = 0; i < idx.length; ) {
+    let j = i;
+    while (j + 1 < idx.length && idx[j + 1][0] === idx[i][0]) j++;
+    for (let k = i; k <= j; k++) r[idx[k][1]] = (i + j) / 2 + 1;
+    i = j + 1;
+  }
+  return r;
+}
+
+export function price(tasks: RawTask[]): Price {
+  const rows = tasks.filter((t) => toUnits(t.reward) > 0);
+  const points = rows.map((t) => [Math.round(toUnits(t.reward) * 100) / 100, t.submissionCount ?? 0, OUTCOMES.indexOf(outcomeOf(t.status))] as [number, number, number]);
+  const bands = BANDS.map(([label, min, max]) => {
+    const b = rows.filter((t) => toUnits(t.reward) >= min && toUnits(t.reward) < max);
+    const closed = b.filter((t) => ["completed", "expired", "cancelled"].includes(t.status));
+    return {
+      label,
+      min,
+      max,
+      tasks: b.length,
+      medianSubs: median(b.map((t) => t.submissionCount ?? 0)),
+      completedShare: closed.length ? closed.filter((t) => t.status === "completed").length / closed.length : 0,
+      diedShare: closed.length ? closed.filter((t) => t.status !== "completed").length / closed.length : 0,
+    };
+  });
+  let rho = 0;
+  if (points.length > 2) {
+    const a = ranks(points.map((p) => p[0]));
+    const b = ranks(points.map((p) => p[1]));
+    const n = a.length;
+    const ma = a.reduce((x, y) => x + y, 0) / n;
+    const mb = b.reduce((x, y) => x + y, 0) / n;
+    let num = 0, da = 0, db = 0;
+    for (let i = 0; i < n; i++) {
+      num += (a[i] - ma) * (b[i] - mb);
+      da += (a[i] - ma) ** 2;
+      db += (b[i] - mb) ** 2;
+    }
+    rho = da && db ? num / Math.sqrt(da * db) : 0;
+  }
+  return { points, bands, rho };
+}
+
+export type OddsTask = { id: string; ref: string | null; title: string; reward: number; submissions: number; perEntrant: number; hoursLeft: number | null; mode: string };
+
+/** Open tasks still accepting work, ranked by reward per entrant if you joined now. */
+export function odds(tasks: RawTask[], now: number, n = 10): OddsTask[] {
+  return tasks
+    .filter((t) => t.status === "open" && toUnits(t.reward) > 0 && (!t.expiryTime || new Date(t.expiryTime).getTime() > now))
+    .map((t) => {
+      const reward = toUnits(t.reward);
+      const subs = t.submissionCount ?? 0;
+      return {
+        id: t.id,
+        ref: t.referenceCode,
+        title: taskTitle(t),
+        reward,
+        submissions: subs,
+        perEntrant: reward / (subs + 1),
+        hoursLeft: t.expiryTime ? (new Date(t.expiryTime).getTime() - now) / 3.6e6 : null,
+        mode: t.mode,
+      };
+    })
+    .sort((a, b) => b.perEntrant - a.perEntrant)
+    .slice(0, n);
+}
+
+/** Per-wallet totals for the lookup: tasks posted / reward posted / top awards won / reward of those tasks. */
+export type WalletRow = [posted: number, postedReward: number, won: number, wonReward: number];
+export function wallets(tasks: RawTask[]): Record<string, WalletRow> {
+  const out: Record<string, WalletRow> = {};
+  for (const t of tasks) {
+    const v = toUnits(t.reward);
+    const p = t.requester.toLowerCase();
+    const r = (out[p] ??= [0, 0, 0, 0]);
+    r[0]++;
+    r[1] += v;
+    const w = t.status === "completed" ? t.primaryAward?.workerAddress?.toLowerCase() : undefined;
+    if (w) {
+      const q = (out[w] ??= [0, 0, 0, 0]);
+      q[2]++;
+      q[3] += v;
+    }
+  }
+  for (const k in out) {
+    out[k][1] = Math.round(out[k][1] * 100) / 100;
+    out[k][3] = Math.round(out[k][3] * 100) / 100;
+  }
+  return out;
+}
+
 export type SwarmTask = { id: string; ref: string | null; title: string; reward: number; submissions: number; createdAt: string; expiry: string | null; mode: string };
 
 export type ChainDerived = {
@@ -181,6 +360,9 @@ export type ChainDerived = {
   weekly: WeekPosters[];
   concentration: Concentration;
   flow: Flow;
+  pay: PayFlow;
+  price: Price;
+  odds: OddsTask[];
   open: { count: number; zeroSubs: number; medianSubs: number; reward: number; top: SwarmTask[] };
   winners: { completed: number; distinctWinners: number; topWinnerShare: number };
   oldest: string | null;
@@ -193,7 +375,7 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-export function deriveChain(tasks: RawTask[]): ChainDerived {
+export function deriveChain(tasks: RawTask[], now = Date.now()): ChainDerived {
   const byOutcome = Object.fromEntries(OUTCOMES.map((o) => [o, { tasks: 0, reward: 0 }])) as ChainDerived["byOutcome"];
   const byStatus: Record<string, number> = {};
   const byMode: ChainDerived["byMode"] = {};
@@ -231,6 +413,9 @@ export function deriveChain(tasks: RawTask[]): ChainDerived {
     weekly: postersPerWeek(tasks),
     concentration: conc,
     flow: rewardFlow(tasks),
+    pay: payFlow(tasks),
+    price: price(tasks),
+    odds: odds(tasks, now),
     open: {
       count: open.length,
       zeroSubs: open.filter((t) => !t.submissionCount).length,

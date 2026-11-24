@@ -246,3 +246,46 @@ export function Hive({ submissions, reward, maxReward }: { submissions: number; 
     </svg>
   );
 }
+
+// ---------------------------------------------------------------- reward vs entries scatter
+/** Every task as a dot: reward (log) across, submissions (log) up, coloured by outcome. */
+export function PriceScatter({ points, colors, label, bands }: { points: [number, number, number][]; colors: string[]; label: string; bands: { min: number; max: number; medianSubs: number }[] }) {
+  const W = 760;
+  const H = 320;
+  const pl = 40, pr = 10, pt = 12, pb = 30;
+  const xmin = Math.log10(0.05), xmax = Math.log10(Math.max(200, ...points.map((p) => p[0])));
+  const ymax = Math.log10(1 + Math.max(10, ...points.map((p) => p[1])));
+  const xs = (v: number) => pl + ((Math.log10(Math.max(v, 0.05)) - xmin) / (xmax - xmin)) * (W - pl - pr);
+  const ys = (v: number) => pt + (1 - Math.log10(1 + v) / ymax) * (H - pt - pb);
+  // deterministic jitter so stacked dots stay visible
+  const jit = (i: number) => (((i * 9301 + 49297) % 233280) / 233280 - 0.5) * 6;
+  const paths = colors.map(() => "");
+  points.forEach(([r, n, o], i) => {
+    paths[o] += `M${(xs(r) + jit(i)).toFixed(1)},${(ys(n) + jit(i + 7) * 0.6).toFixed(1)}h0`;
+  });
+  const xticks = [0.1, 1, 10, 100, 1000].filter((v) => Math.log10(v) <= xmax + 0.01);
+  const yticks = [0, 1, 10, 100, 1000].filter((v) => Math.log10(1 + v) <= ymax + 0.01);
+  return (
+    <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
+      <title>{label}</title>
+      {yticks.map((v) => (
+        <g key={v}>
+          <line x1={pl} x2={W - pr} y1={ys(v)} y2={ys(v)} stroke={C.line} strokeDasharray="2 4" />
+          <text x={pl - 6} y={ys(v) + 4} textAnchor="end" className="tick num">{v}</text>
+        </g>
+      ))}
+      {xticks.map((v) => (
+        <text key={v} x={xs(v)} y={H - 10} textAnchor="middle" className="tick num">${v >= 1 ? v : v.toFixed(1)}</text>
+      ))}
+      {paths.map((d, i) => (d ? <path key={i} d={d} stroke={colors[i]} strokeWidth={4} strokeLinecap="round" strokeOpacity={0.7} fill="none" /> : null))}
+      {/* median entries per reward band */}
+      {bands.filter((b) => b.medianSubs >= 0 && Number.isFinite(b.min)).map((b) => {
+        const x0 = xs(Math.max(b.min, 0.05));
+        const x1 = xs(Number.isFinite(b.max) ? b.max : Math.pow(10, xmax));
+        return <line key={b.min} x1={x0 + 2} x2={x1 - 2} y1={ys(b.medianSubs)} y2={ys(b.medianSubs)} stroke={C.paper} strokeWidth={2.5}><title>{`median ${b.medianSubs} entries`}</title></line>;
+      })}
+      <text x={W - pr} y={H - 24} className="tick" textAnchor="end">reward →</text>
+      <text x={pl + 4} y={pt + 10} className="tick">↑ submissions</text>
+    </svg>
+  );
+}

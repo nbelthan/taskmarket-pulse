@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSnapshot } from "@/lib/snapshot";
 import { VIEWS, VIEW_IDS, isView, type ViewId } from "@/lib/views";
-import { FeedView, FlowView, Footer, Header, Nav, Outcomes, OverTime, Posters, Rhythm, Swarm } from "@/components/sections";
+import { PayView, PriceView, OddsView, FeedView, FlowView, Footer, Header, Nav, Outcomes, OverTime, Posters, Rhythm, Swarm } from "@/components/sections";
 import type { Snapshot } from "@/lib/snapshot";
 
 export function generateStaticParams() {
@@ -21,6 +21,9 @@ export async function generateMetadata({ params }: PageProps<"/v/[view]">): Prom
 
 const RENDER: Record<ViewId, (p: { s: Snapshot }) => React.ReactNode> = {
   flow: FlowView,
+  pay: PayView,
+  price: PriceView,
+  odds: OddsView,
   overtime: OverTime,
   posters: Posters,
   swarm: Swarm,

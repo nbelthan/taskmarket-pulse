@@ -13,7 +13,7 @@ import {
   type MarketStats,
   type Range,
 } from "./api";
-import { deriveChain, seriesPoints, type ChainDerived, type SeriesPoint } from "./derive";
+import { deriveChain, seriesPoints, wallets, type ChainDerived, type SeriesPoint, type WalletRow } from "./derive";
 
 export type Snapshot = {
   asOf: string;
@@ -25,6 +25,8 @@ export type Snapshot = {
   heatmap: Record<ChainKey, { hourOfWeek: Heatmap; mode: Heatmap }>;
   feed: FeedItem[];
   chains: Record<ChainKey, ChainDerived>;
+  /** Per-wallet totals per chain, for the wallet lookup (served separately at /api/wallets). */
+  wallets: Record<ChainKey, Record<string, WalletRow>>;
   fetchMs: number;
 };
 
@@ -82,7 +84,8 @@ export async function buildSnapshot(): Promise<Snapshot> {
       base: { hourOfWeek: heatHow[1], mode: heatMode[1] },
     },
     feed: feed.items,
-    chains: { tempo: deriveChain(tasksTempo), base: deriveChain(tasksBase) },
+    chains: { tempo: deriveChain(tasksTempo, t0), base: deriveChain(tasksBase, t0) },
+    wallets: { tempo: wallets(tasksTempo), base: wallets(tasksBase) },
     fetchMs: Date.now() - t0,
   };
 }
