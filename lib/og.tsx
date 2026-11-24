@@ -35,14 +35,16 @@ function cardFor(view: ViewId | "home", s: Snapshot, race: Race | null): Card {
         bars: OUTCOMES.map((o) => ({ v: sum((k) => s.chains[k].byOutcome[o].reward), color: OUTCOME_COLOR[o], l: OUTCOME_LABEL[o] })),
       };
     case "race": {
-      const c = race?.chains.tempo ?? race?.chains.base ?? null;
+      const ck = race?.chains.tempo ? "tempo" : "base";
+      const c = race?.chains[ck] ?? null;
+      const cn = CHAINS[ck].name;
       const fmt = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 172800 ? `${(sec / 3600).toFixed(1)} h` : `${(sec / 86400).toFixed(1)} d`);
       return {
         headline: ["Do early entries", "win?"],
         stats: [
-          { v: c?.firstQuarterShare != null ? pct(c.firstQuarterShare) : "—", l: "of winners were in the first quarter to arrive", hot: true },
-          { v: c?.decision ? fmt(c.decision.median) : "—", l: "median time to a decision" },
-          { v: c?.firstEntry ? fmt(c.firstEntry.median) : "—", l: "median wait for the first entry" },
+          { v: c?.firstQuarterShare != null ? pct(c.firstQuarterShare) : "—", l: `of ${cn} winners were in the first quarter to arrive`, hot: true },
+          { v: c?.decision ? fmt(c.decision.median) : "—", l: `${cn}: median time to a decision` },
+          { v: c?.firstEntry ? fmt(c.firstEntry.median) : "—", l: `${cn}: median wait for first entry` },
         ],
         bars: c ? c.winnerQuarters.map((v, i) => ({ v, color: i === 0 ? C.paper : C.muted, l: `q${i + 1}` })) : undefined,
       };
