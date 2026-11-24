@@ -1,0 +1,126 @@
+// Server-rendered sankey: reward money from posters, through task modes, to outcomes.
+// Hand-rolled layout (no chart library) so the page ships zero chart JS.
+import type { Flow, FlowLink, FlowNode } from "@/lib/derive";
+import { OUTCOME_COLOR, C } from "@/lib/theme";
+import { money } from "@/lib/format";
+import type { Outcome } from "@/lib/derive";
+
+type Props = { flow: Flow; compact?: boolean; title: string };
+
+type Placed = FlowNode & { x: number; y: number; h: number; outOff: number; inOff: number };
+
+export function FlowSankey({ flow, compact = false, title }: Props) {
+  const cols = compact ? [0, 2] : [0, 1, 2];
+  const W = compact ? 360 : 960;
+  const nodeW = compact ? 8 : 12;
+  const labelL = compact ? 96 : 150; // room for left labels
+  const labelR = compact ? 108 : 170; // room for right labels
+  const gap = compact ? 10 : 12;
+  const nodes = flow.nodes.filter((n) => cols.includes(n.col) && n.value > 0);
+  const links: FlowLink[] = compact ? flow.direct : flow.links;
+  const total = flow.total || 1;
+
+  // Height scale from the tallest column (including gaps).
+  const perCol = cols.map((c) => nodes.filter((n) => n.col === c));
+  const maxN = Math.max(...perCol.map((c) => c.length));
+  const H = compact ? 380 : 440;
+  const usable = H - gap * (maxN - 1);
+  const k = usable / total;
+  const minH = 2;
+
+  const xFor = (ci: number) => labelL + (ci * (W - labelL - labelR - nodeW)) / (cols.length - 1);
+  const placed = new Map<string, Placed>();
+  perCol.forEach((colNodes, ci) => {
+    const heights = colNodes.map((n) => Math.max(minH, n.value * k));
+    const colH = heights.reduce((a, b) => a + b, 0) + gap * (colNodes.length - 1);
+    let y = (H - colH) / 2;
+    colNodes.forEach((n, i) => {
+      placed.set(n.id, { ...n, x: xFor(ci), y, h: heights[i], outOff: 0, inOff: 0 });
+      y += heights[i] + gap;
+    });
+  });
+
+  // Order links so bands don't cross needlessly.
+  const pos = (id: string) => placed.get(id)?.y ?? 0;
+  const ordered = [...links]
+    .filter((l) => placed.has(l.source) && placed.has(l.target))
+    .sort((a, b) => pos(a.source) - pos(b.source) || pos(a.target) - pos(b.target));
+  const bySourceThenTarget = ordered;
+  const byTargetThenSource = [...ordered].sort((a, b) => pos(a.target) - pos(b.target) || pos(a.source) - pos(b.source));
+  const sy = new Map<FlowLink, number>();
+  const ty = new Map<FlowLink, number>();
+  for (const l of bySourceThenTarget) {
+    const s = placed.get(l.source)!;
+    const scale = s.h / Math.max(s.value, 1e-9);
+    sy.set(l, s.y + s.outOff);
+    s.outOff += l.value * scale;
+  }
+  for (const l of byTargetThenSource) {
+    const t = placed.get(l.target)!;
+    const scale = t.h / Math.max(t.value, 1e-9);
+    ty.set(l, t.y + t.inOff);
+    t.inOff += l.value * scale;
+  }
+
+  const colorFor = (l: FlowLink) => {
+    const t = placed.get(l.target)!;
+    if (t.col === 2) return OUTCOME_COLOR[t.kind as Outcome] ?? C.muted;
+    return C.cream;
+  };
+  const opacityFor = (l: FlowLink) => (placed.get(l.target)!.col === 2 ? 0.42 : 0.14);
+
+  const fs = compact ? 10.5 : 13;
+  const fsSmall = compact ? 9.5 : 11.5;
+
+  return (
+    <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title}>
+      <title>{title}</title>
+      {ordered.map((l, i) => {
+        const s = placed.get(l.source)!;
+        const t = placed.get(l.target)!;
+        const sh = l.value * (s.h / Math.max(s.value, 1e-9));
+        const th = l.value * (t.h / Math.max(t.value, 1e-9));
+        const x0 = s.x + nodeW;
+        const x1 = t.x;
+        const y0 = sy.get(l)!;
+        const y1 = ty.get(l)!;
+        const mx = (x0 + x1) / 2;
+        const d = `M${x0},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1} L${x1},${y1 + th} C${mx},${y1 + th} ${mx},${y0 + sh} ${x0},${y0 + sh} Z`;
+        return (
+          <path key={i} d={d} fill={colorFor(l)} fillOpacity={opacityFor(l)}>
+            <title>{`${s.label} → ${t.label}: ${money(l.value)} across ${l.tasks} tasks`}</title>
+          </path>
+        );
+      })}
+      {[...placed.values()].map((n) => {
+        const isLast = n.col === cols[cols.length - 1];
+        const isFirst = n.col === cols[0];
+        const fill = n.col === 2 ? OUTCOME_COLOR[n.kind as Outcome] : n.col === 1 ? C.cream : n.kind === "others" ? C.muted : C.cream;
+        const tx = isLast ? n.x + nodeW + 8 : isFirst ? n.x - 8 : n.x + nodeW / 2;
+        const anchor = isLast ? "start" : isFirst ? "end" : "middle";
+        const cy = n.y + n.h / 2;
+        const showLabel = n.h > 4 || !compact;
+        return (
+          <g key={n.id}>
+            <rect x={n.x} y={n.y} width={nodeW} height={n.h} rx={2} fill={fill}>
+              <title>{`${n.label}: ${money(n.value)} across ${n.tasks} tasks`}</title>
+            </rect>
+            {showLabel && n.col !== 1 && (
+              <text x={tx} y={cy} textAnchor={anchor} dominantBaseline="middle" fontSize={fs} fill={C.cream} className={n.kind === "poster" ? "num" : undefined}>
+                {n.label}
+                <tspan dx={6} fill={C.muted} fontSize={fsSmall} className="num">
+                  {money(n.value)}
+                </tspan>
+              </text>
+            )}
+            {n.col === 1 && n.h > 14 && (
+              <text x={n.x + nodeW + 6} y={cy} dominantBaseline="middle" fontSize={fsSmall} fill={C.muted}>
+                {n.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}

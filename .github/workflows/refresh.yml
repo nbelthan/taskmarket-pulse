@@ -1,0 +1,18 @@
+# Keeps the hosted snapshot fresh even when nobody is visiting.
+# Each request past the 10-minute revalidate window triggers a background rebuild.
+# Set the repository variable SITE_URL (e.g. https://your-app.vercel.app) to enable.
+name: refresh
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SITE_URL != '' }}
+    steps:
+      - name: Request pages so stale snapshots rebuild
+        run: |
+          for p in / /api/snapshot /api/feed /v/flow /v/overtime /v/posters /v/swarm /v/outcomes /v/rhythm /v/feed; do
+            curl -fsS -o /dev/null -w "$p %{http_code} %{time_total}s\n" "${{ vars.SITE_URL }}$p" || true
+          done
