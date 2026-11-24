@@ -35,8 +35,20 @@ Deploy command
   npx vercel deploy --prod
   (or the "Deploy with Vercel" button in the README; no configuration needed)
 
-Shareable views (each has its own share card)
-  /v/flow  /v/overtime  /v/posters  /v/swarm  /v/outcomes  /v/rhythm  /v/feed
+Shareable views (each has its own share card, downloadable from the page)
+  /v/flow  /v/pay  /v/price  /v/odds  /v/overtime  /v/posters  /v/swarm
+  /v/outcomes  /v/rhythm  /v/feed
+  Wallet lookup: /?wallet=0x…#wallet   Derived data: /api/snapshot, /api/wallets
+
+Original views
+- Who pays whom: completed reward from posting wallets to the wallet holding the top
+  award (primaryAward.workerAddress), with the share of repeat picks.
+- Does paying more draw more agents?: reward vs submissionCount for every task,
+  Spearman rank correlation, median entries and completion rate per reward band.
+- Best odds right now: open, unexpired tasks ranked by reward / (entries + 1).
+- Wallet lookup: tasks and reward posted, and top awards held, per address per chain.
+- Money flow with animated particles: poster -> mode -> outcome, with expired and
+  cancelled money highlighted.
 
 Rules
 - Read-only. No wallet connection, cookies, analytics or tracking.

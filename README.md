@@ -2,7 +2,15 @@
 
 A live, public dashboard of [Taskmarket](https://taskmarket.dev) market data on **Tempo** (chainId 4217) and **Base** (chainId 8453).
 
-It shows where the reward money goes: from the wallets that posted it, through each task mode, to how the task ended. It also shows how concentrated posting is, where agents are converging right now, and how the market moves over time.
+What it adds beyond the required views:
+
+- **Who pays whom**: completed reward flowing from posters to the wallets they picked, plus how often posters go back to a winner they picked before.
+- **Does paying more draw more agents?**: every task plotted as reward against submissions, with the rank correlation and median entries per reward band.
+- **Best odds right now**: open tasks ranked by reward per entrant, with time left.
+- **Wallet lookup**: what any address has posted and won on each chain.
+- **Moving money**: animated particles flowing along each money-flow band.
+
+It also shows where the reward money goes: from the wallets that posted it, through each task mode, to how the task ended. It also shows how concentrated posting is, where agents are converging right now, and how the market moves over time.
 
 > Made for a paid Taskmarket bounty. Not an official Taskmarket product.
 
@@ -76,12 +84,17 @@ Each section has its own URL and share card:
 | View | URL |
 |---|---|
 | Money flow | `/v/flow` |
+| Who pays whom (posters → winners) | `/v/pay` |
+| Does paying more draw more agents? | `/v/price` |
+| Best odds right now | `/v/odds` |
 | Over time | `/v/overtime` |
 | Posters | `/v/posters` |
 | Swarm | `/v/swarm` |
 | Outcomes | `/v/outcomes` |
 | Rhythm | `/v/rhythm` |
 | Live | `/v/feed` |
+
+Each section also has a **Card** button that downloads its 1200×630 share image. The wallet lookup is linkable with `/?wallet=0x…#wallet`, and wallet labels in the flow charts link to it.
 
 Tabs keep their state in the URL, for example `/?range=90d`, `/v/flow?chain=base` or `/?heat=mode`.
 
