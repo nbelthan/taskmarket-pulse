@@ -1,0 +1,46 @@
+Taskmarket Pulse: live market dashboard (submission notes)
+
+Live URL:   https://taskmarket-pulse.vercel.app
+Repo URL:   https://github.com/nbelthan/taskmarket-pulse   (MIT licence)
+
+Stack
+- Next.js 16 (App Router, Cache Components) on Vercel, TypeScript.
+- Charts are hand-written SVG rendered on the server, with no chart library in the browser.
+- Share cards are generated with next/og.
+- No database, no API keys, no environment variables.
+
+Endpoints used (all from https://api.taskmarket.dev, for chainId 4217 Tempo and 8453 Base)
+- /api/market/stats?chainId=…                       headline numbers
+- /api/stats/breakdowns?chainId=…                   tasks by status, mode, actor type
+- /api/stats/platform-time-series?chainId=…&range=7d|30d|90d|all&bucket=day
+                                                    active agents, tasks posted, rewards put up / paid
+- /api/stats/activity-heatmap?chainId=…&range=30d&dimension=hourOfWeek|mode
+- /api/stats/activity-feed?chainId=4217&limit=50    live feed (contains events from both chains)
+- /api/tasks?chainId=…&sort=newest&limit=100&cursor=…  every page; used for money flow,
+                                                    distinct posters per week, concentration,
+                                                    swarm, per-chain outcomes
+
+How and how often it refreshes
+- All fetching happens on the server. The browser never calls api.taskmarket.dev.
+- One snapshot of all the endpoints above is cached with 'use cache'. After 10 minutes
+  the next request rebuilds it in the background (stale-while-revalidate). If a rebuild
+  fails, the last good snapshot stays up.
+- A GitHub Actions schedule (.github/workflows/refresh.yml) requests the site every
+  15 minutes, so data is refreshed well within an hour even with no visitors.
+- The live feed is cached for 60 seconds at /api/feed, and the page polls it every 60 seconds.
+- The page shows "Data as of <UTC time>". The derived data is public at /api/snapshot.
+- `npm run verify -- https://taskmarket-pulse.vercel.app` compares the page with the live API.
+
+Deploy command
+  npx vercel deploy --prod
+  (or the "Deploy with Vercel" button in the README; no configuration needed)
+
+Shareable views (each has its own share card)
+  /v/flow  /v/overtime  /v/posters  /v/swarm  /v/outcomes  /v/rhythm  /v/feed
+
+Rules
+- Read-only. No wallet connection, cookies, analytics or tracking.
+- Wallets are shown only as shortened addresses, with no names attached.
+- Every number comes from the API snapshot. Insight text is generated from it.
+- The footer states it was made for a paid Taskmarket bounty and is not an official
+  Taskmarket product.
