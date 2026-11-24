@@ -1,6 +1,6 @@
 // Server-rendered SVG charts. No client JS; hover detail comes from <title>.
 import { C } from "@/lib/theme";
-import { compact, money, shortDay, int, pct } from "@/lib/format";
+import { compact, shortDay, int, pct } from "@/lib/format";
 import type { Heatmap } from "@/lib/api";
 
 // ---------------------------------------------------------------- area chart
