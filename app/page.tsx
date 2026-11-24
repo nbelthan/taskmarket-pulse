@@ -1,19 +1,20 @@
-import { getSnapshot } from "@/lib/snapshot";
-import { PayView, PriceView, OddsView, WalletView, FeedView, FlowView, Footer, Header, Hero, Insights, Kpis, Methods, Outcomes, OverTime, Posters, Rhythm, Swarm } from "@/components/sections";
+import { getRace, getSnapshot } from "@/lib/snapshot";
+import { RaceView, PayView, PriceView, OddsView, WalletView, FeedView, FlowView, Footer, Header, Hero, Insights, Kpis, Methods, Outcomes, OverTime, Posters, Rhythm, Swarm } from "@/components/sections";
 
 export default async function Home() {
-  const s = await getSnapshot();
+  const [s, race] = await Promise.all([getSnapshot(), getRace().catch(() => null)]);
   return (
     <>
       <Header s={s} />
       <main>
-        <Hero s={s} />
+        <Hero s={s} race={race} />
         <div className="wrap">
           <FlowView s={s} />
+          <RaceView race={race} />
           <PayView s={s} />
         </div>
         <Kpis s={s} />
-        <Insights s={s} />
+        <Insights s={s} race={race} />
         <div className="wrap">
           <PriceView s={s} />
           <OddsView s={s} />

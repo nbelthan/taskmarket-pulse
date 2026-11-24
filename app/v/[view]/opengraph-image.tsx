@@ -1,4 +1,4 @@
-import { getSnapshot } from "@/lib/snapshot";
+import { getRace, getSnapshot } from "@/lib/snapshot";
 import { cardPng, pngResponse, OG_SIZE } from "@/lib/og";
 import { VIEW_IDS, isView } from "@/lib/views";
 
@@ -12,6 +12,6 @@ export function generateStaticParams() {
 
 export default async function Image({ params }: { params: Promise<{ view: string }> }) {
   const { view } = await params;
-  const s = await getSnapshot();
-  return pngResponse(await cardPng(isView(view) ? view : "home", s));
+  const [s, race] = await Promise.all([getSnapshot(), view === "race" ? getRace().catch(() => null) : Promise.resolve(null)]);
+  return pngResponse(await cardPng(isView(view) ? view : "home", s, race));
 }

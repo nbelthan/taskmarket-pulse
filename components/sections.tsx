@@ -1,7 +1,7 @@
 // Page sections. All server components reading one snapshot.
 import type { ReactNode } from "react";
 import { CHAINS, CHAIN_KEYS, API_BASE, type ChainKey } from "@/lib/api";
-import type { Snapshot } from "@/lib/snapshot";
+import type { Snapshot, Race } from "@/lib/snapshot";
 import { OUTCOMES, OUTCOME_LABEL, MODES, shortAddr } from "@/lib/derive";
 import { insights } from "@/lib/insights";
 import { C, CHAIN_COLOR, MODE_COLOR, OUTCOME_COLOR, STATUS_COLOR } from "@/lib/theme";
@@ -12,6 +12,7 @@ import { AreaChart, BarList, HeatGrid, Hive, Lorenz, PriceScatter, StackBar, Wee
 import { WalletLookup } from "./WalletLookup";
 import { Ago, ShareButton, Tabs } from "./client";
 import { LiveFeed } from "./LiveFeed";
+import { SwarmReplay } from "./SwarmReplay";
 
 export const REPO_URL = process.env.NEXT_PUBLIC_REPO_URL ?? "https://github.com/nbelthan/taskmarket-pulse";
 
@@ -76,23 +77,39 @@ export function Nav() {
   );
 }
 
-export function Hero({ s }: { s: Snapshot }) {
+export function Hero({ s, race }: { s: Snapshot; race?: Race | null }) {
   const t = s.chains.tempo;
   const b = s.chains.base;
   const total = t.rewardTotal + b.rewardTotal;
   const paid = t.byOutcome.completed.reward + b.byOutcome.completed.reward;
   const died = t.byOutcome.expired.reward + t.byOutcome.cancelled.reward + b.byOutcome.expired.reward + b.byOutcome.cancelled.reward;
+  const replay = race?.replays[0];
   return (
     <div className="wrap hero">
       <Nav />
-      <h1>
-        Where the reward money <span className="accent">goes.</span>
-      </h1>
-      <p className="lede">
-        <strong>{money(total)}</strong> in rewards has been put up across <strong>{int(t.taskCount + b.taskCount)}</strong> tasks on Tempo and Base.{" "}
-        <strong>{money(paid)}</strong> sits in tasks that completed, and <strong style={{ color: C.magenta }}>{money(died)}</strong> in tasks that
-        expired or were cancelled. Follow it from the wallets that posted it, through each task mode, to how it ended.
-      </p>
+      <div className="herogrid">
+        <div>
+          <h1>
+            Where the reward money <span className="accent">goes.</span>
+          </h1>
+          <p className="lede">
+            <strong>{money(total)}</strong> in rewards has been put up across <strong>{int(t.taskCount + b.taskCount)}</strong> tasks on Tempo and Base.{" "}
+            <strong>{money(paid)}</strong> sits in tasks that completed, and <strong style={{ color: C.magenta }}>{money(died)}</strong> in tasks that
+            expired or were cancelled. Follow it from the wallets that posted it, through each task mode, to how it ended.
+          </p>
+          {replay ? (
+            <p className="lede" style={{ fontSize: 15 }}>
+              The replay is a real task: each dot is one entry arriving at its real time, then the poster picks one and the reward flows to it.{" "}
+              <a href="/#race">More replays and timings</a>.
+            </p>
+          ) : null}
+        </div>
+        {replay ? (
+          <div className="panel" style={{ padding: 12 }}>
+            <SwarmReplay tasks={[replay]} compact />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -176,7 +193,7 @@ export function PayView({ s }: { s: Snapshot }) {
   return (
     <Section
       id="pay"
-      kicker="02 · Posters to winners"
+      kicker="03 · Posters to winners"
       sub="Money flowing from the wallets that post work to the wallets they pick. Do posters keep going back to the same agents, or does the work spread out?"
       source={
         <>
@@ -236,7 +253,7 @@ export function PriceView({ s }: { s: Snapshot }) {
   return (
     <Section
       id="price"
-      kicker="03 · Pricing"
+      kicker="04 · Pricing"
       sub="Every task as a dot: its reward against how many submissions it drew. If agents follow the money, the cloud rises to the right."
       source={
         <>
@@ -288,7 +305,7 @@ export function OddsView({ s }: { s: Snapshot }) {
   return (
     <Section
       id="odds"
-      kicker="04 · For agents"
+      kicker="05 · For agents"
       sub="Open tasks where the reward is large compared with the crowd already there. Most dashboards show the busiest tasks; this shows the least crowded money."
       source={
         <>
@@ -320,6 +337,145 @@ export function WalletView() {
         <a href="/api/wallets">/api/wallets</a>.
       </p>
     </section>
+  );
+}
+
+// ------------------------------------------------------------------ the race
+function dur(sec: number): string {
+  if (sec < 60) return `${Math.round(sec)} s`;
+  const m = sec / 60;
+  if (m < 60) return `${Math.round(m)} min`;
+  const h = m / 60;
+  if (h < 48) return `${h < 10 ? h.toFixed(1) : Math.round(h)} h`;
+  return `${(h / 24).toFixed(1)} days`;
+}
+
+export function RaceView({ race }: { race: Race | null }) {
+  if (!race || !race.replays.length) {
+    return (
+      <section className="section" id="race">
+        <div className="kicker">The race</div>
+        <h2 className="serif">Watch a task get decided</h2>
+        <p className="sub">Replay data is being refreshed. It will be back within a few minutes.</p>
+      </section>
+    );
+  }
+  const pane = (k: ChainKey) => {
+    const c = race.chains[k];
+    if (!c) return <p className="muted">No sample for {CHAINS[k].name} right now.</p>;
+    const qn = c.winnerQuarters.reduce((a, b) => a + b, 0) || 1;
+    return (
+      <div>
+        <div className="stats3">
+          <div>
+            <b>{c.firstEntry ? dur(c.firstEntry.median) : "—"}</b>
+            <span>median wait for the first entry</span>
+          </div>
+          <div>
+            <b>{c.decision ? dur(c.decision.median) : "—"}</b>
+            <span>
+              median from posting to first payout{c.decision ? ` (middle half ${dur(c.decision.p25)}–${dur(c.decision.p75)})` : ""}
+            </span>
+          </div>
+          <div>
+            <b>{c.entriesAtDecision !== null ? int(c.entriesAtDecision) : "—"}</b>
+            <span>median entries in by the time of the pick</span>
+          </div>
+        </div>
+        <h3 style={{ margin: "6px 0 8px", fontSize: 15 }}>Do early entries win?</h3>
+        <p className="sub" style={{ marginTop: 0 }}>
+          Where the winning entry sat in the arrival order.{" "}
+          {c.firstQuarterShare !== null ? (
+            <>
+              <b style={{ color: C.paper }}>{pct(c.firstQuarterShare)}</b> of winners were in the first quarter to arrive; if arrival order did not matter it would be about 25%.
+            </>
+          ) : null}
+        </p>
+        <BarList
+          valueFmt={(n) => pct(n / qn)}
+          rows={["First quarter", "Second quarter", "Third quarter", "Last quarter"].map((label, i) => ({ label, value: c.winnerQuarters[i], color: i === 0 ? C.paper : C.muted }))}
+        />
+        <h3 style={{ margin: "16px 0 8px", fontSize: 15 }}>Time from posting to first payout</h3>
+        <BarList rows={c.decisionBins.map((b) => ({ label: b.label, value: b.n, color: C.salmon }))} />
+        <p className="source">
+          Sample: the {int(c.sample)} most recent completed {CHAINS[k].name} tasks with at least 3 entries (posted since {c.oldest?.slice(0, 10)}). {money(c.paid)} paid out across
+          their awards. Only tasks already decided are counted, so slow decisions still in progress are not in this sample yet.
+        </p>
+      </div>
+    );
+  };
+  return (
+    <Section
+      id="race"
+      kicker="02 · The race"
+      sub="How fast agents arrive, how long posters take to choose, and whether getting in early pays. Pick a task to replay it."
+      source={
+        <>
+          <Code>/api/tasks?status=completed</Code>, then for each sampled task <Code>/api/tasks/&lt;id&gt;</Code> (<Code>awards[].settledAt</Code>, <Code>workerPayment</Code>,{" "}
+          <Code>submissionId</Code>) and <Code>/api/tasks/&lt;id&gt;/submissions</Code> (<Code>submittedAt</Code>). Sampled and cached for an hour, as of {utc(race.asOf)}.
+        </>
+      }
+    >
+      <div className="grid2">
+        <div className="panel">
+          <SwarmReplay tasks={race.replays} />
+        </div>
+        <div className="panel">
+          <Tabs label="Chain" param="rchain" tabs={CHAIN_KEYS.filter((k) => race.chains[k]).map((k) => ({ key: k, label: CHAINS[k].name, content: pane(k) }))} />
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// ------------------------------------------------------------------ week over week
+export function WeekOverWeek({ s }: { s: Snapshot }) {
+  const full = s.series.tempo["30d"].slice(0, -1); // drop today's partial day
+  if (full.length < 14) return null;
+  const last = full.slice(-7);
+  const prev = full.slice(-14, -7);
+  const sum = (xs: typeof full, f: (p: (typeof full)[number]) => number) => xs.reduce((a, p) => a + f(p), 0);
+  const rows: { label: string; a: number; b: number; fmt: (n: number) => string }[] = [
+    { label: "Tasks posted", a: sum(last, (p) => p.tasksCreated), b: sum(prev, (p) => p.tasksCreated), fmt: int },
+    { label: "Rewards put up", a: sum(last, (p) => p.rewardPosted), b: sum(prev, (p) => p.rewardPosted), fmt: money },
+    { label: "Rewards paid", a: sum(last, (p) => p.rewardPaid), b: sum(prev, (p) => p.rewardPaid), fmt: money },
+    { label: "Active agents, avg / day", a: sum(last, (p) => p.activeAgents) / 7, b: sum(prev, (p) => p.activeAgents) / 7, fmt: int },
+    { label: "New agents", a: sum(last, (p) => p.newAgents), b: sum(prev, (p) => p.newAgents), fmt: int },
+    { label: "Tasks completed", a: sum(last, (p) => p.completedTasks), b: sum(prev, (p) => p.completedTasks), fmt: int },
+  ];
+  for (const k of CHAIN_KEYS) {
+    const w = s.chains[k].weekly.slice(0, -1);
+    const a = w.at(-1);
+    const b = w.at(-2);
+    if (a) rows.push({ label: `${CHAINS[k].name}: distinct posters (week of ${a.week})`, a: a.posters, b: b?.posters ?? 0, fmt: int });
+  }
+  return (
+    <div className="panel" style={{ marginTop: 16, overflowX: "auto" }}>
+      <h3 style={{ margin: "0 0 8px", fontSize: 15 }}>What is growing</h3>
+      <table className="tbl">
+        <thead>
+          <tr><th>Metric</th><th>Last 7 full days</th><th>7 days before</th><th>Change</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const d = r.b ? (r.a - r.b) / r.b : null;
+            return (
+              <tr key={r.label}>
+                <td>{r.label}</td>
+                <td className="mono">{r.fmt(r.a)}</td>
+                <td className="mono muted">{r.fmt(r.b)}</td>
+                <td className="mono" style={{ color: d === null ? C.muted : d >= 0 ? C.paper : C.salmon }}>
+                  {d === null ? "new" : `${d >= 0 ? "▲" : "▼"} ${pct(Math.abs(d))}`}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="source">
+        Platform rows: <Code>/api/stats/platform-time-series?range=30d&bucket=day</Code>, today excluded. Poster rows: last two full ISO weeks from <Code>/api/tasks</Code>.
+      </p>
+    </div>
   );
 }
 
@@ -376,8 +532,8 @@ export function Kpis({ s }: { s: Snapshot }) {
 }
 
 // ------------------------------------------------------------------ insights
-export function Insights({ s }: { s: Snapshot }) {
-  const list = insights(s);
+export function Insights({ s, race }: { s: Snapshot; race?: Race | null }) {
+  const list = insights(s, race ?? null);
   return (
     <section className="wrap section" aria-labelledby="insights-h">
       <div className="kicker">What the numbers say</div>
@@ -394,6 +550,7 @@ export function Insights({ s }: { s: Snapshot }) {
         ))}
       </div>
       <p className="source">Each line is generated from the same snapshot as the charts; nothing is written by hand.</p>
+      <WeekOverWeek s={s} />
     </section>
   );
 }
@@ -433,7 +590,7 @@ export function OverTime({ s }: { s: Snapshot }) {
   return (
     <Section
       id="overtime"
-      kicker="05 · Over time"
+      kicker="06 · Over time"
       sub={`Day by day (UTC). The last day is still in progress.${s.sameAcrossChains.series ? " The API returns the same series for both chain ids, so this is the whole platform." : ""}`}
       source={
         <>
@@ -452,7 +609,7 @@ export function Posters({ s }: { s: Snapshot }) {
   return (
     <Section
       id="posters"
-      kicker="06 · Posters"
+      kicker="07 · Posters"
       sub="How many different wallets post work each week, and how much of the work comes from a few of them."
       source={
         <>
@@ -544,7 +701,7 @@ export function Swarm({ s }: { s: Snapshot }) {
   return (
     <Section
       id="swarm"
-      kicker="07 · Swarm"
+      kicker="08 · Swarm"
       sub="The open tasks drawing the most agents. Each dot is one submission spiralling in on the task; the centre is sized by reward. Tap a task to open it on taskmarket.dev."
       source={
         <>
@@ -566,7 +723,7 @@ export function Outcomes({ s }: { s: Snapshot }) {
   return (
     <Section
       id="outcomes"
-      kicker="08 · Outcomes"
+      kicker="09 · Outcomes"
       sub={s.sameAcrossChains.breakdowns ? "Platform totals from the breakdowns endpoint (it returns the same counts for both chain ids), then each chain from its own task list." : undefined}
       source={
         <>
@@ -609,7 +766,7 @@ export function Rhythm({ s }: { s: Snapshot }) {
   return (
     <Section
       id="rhythm"
-      kicker="09 · Rhythm"
+      kicker="10 · Rhythm"
       sub={`Activity over the last 30 days, by hour of the week (UTC) or by task mode per day. The outlined cell is the busiest.${s.sameAcrossChains.heatmap ? " Same for both chain ids: platform-wide." : ""}`}
       source={
         <>
@@ -636,7 +793,7 @@ export function FeedView({ s }: { s: Snapshot }) {
   return (
     <Section
       id="feed"
-      kicker="10 · Live"
+      kicker="11 · Live"
       sub="The latest events across the market, newest first. Addresses only; no names are attached to wallets."
       source={
         <>
@@ -660,6 +817,9 @@ export function Methods({ s }: { s: Snapshot }) {
     "/api/stats/activity-heatmap?chainId={4217|8453}&range=30d&dimension={hourOfWeek|mode}",
     "/api/stats/activity-feed?chainId=4217&limit=50",
     "/api/tasks?chainId={4217|8453}&sort=newest&limit=100&cursor=… (every page)",
+    "/api/tasks?chainId=…&status=completed|open&sort=newest&limit=100 (race sample)",
+    "/api/tasks/<id>?chainId=… (awards: settledAt, workerPayment, submissionId)",
+    "/api/tasks/<id>/submissions?chainId=… (submittedAt of every entry)",
   ];
   return (
     <section className="wrap section" id="methods" aria-labelledby="methods-h">
@@ -682,7 +842,7 @@ export function Methods({ s }: { s: Snapshot }) {
         </ul>
         <h3>Refresh</h3>
         <ul>
-          <li>The snapshot is cached and rebuilt in the background at most every 10 minutes when the page is requested; a scheduled job requests it every 15 minutes, so data is never more than about 30 minutes old. If a rebuild fails, the last good snapshot stays up.</li>
+          <li>The snapshot is cached and rebuilt in the background at most every 5 minutes when the page is requested; a scheduled job requests the site every 5–15 minutes, so data stays well inside the hour. If a rebuild fails, the last good snapshot stays up.</li>
           <li>The live feed is cached for 60 seconds and the page re-checks it every 60 seconds.</li>
           <li>This snapshot took {int(s.fetchMs)} ms to build. The raw derived data is at <a href="/api/snapshot">/api/snapshot</a>.</li>
         </ul>
@@ -694,6 +854,7 @@ export function Methods({ s }: { s: Snapshot }) {
           <li>Winners: <code>primaryAward.workerAddress</code> on completed tasks. &ldquo;Who pays whom&rdquo; links each completed task&apos;s <code>requester</code> to that wallet, weighted by reward; a repeat pick is a task whose poster had already picked the same winner.</li>
           <li>Pricing: Spearman rank correlation between <code>reward</code> and <code>submissionCount</code> over every task with a reward; median entries per reward band.</li>
           <li>Best odds: open tasks whose <code>expiryTime</code> is after the snapshot, ranked by reward ÷ (<code>submissionCount</code> + 1).</li>
+          <li>The race: the 40 most recent completed tasks per chain with 3+ entries. Time to first entry = first <code>submittedAt</code> − <code>createdAt</code>; time to decision = earliest <code>awards[].settledAt</code> − <code>createdAt</code>; arrival quarter = position of the primary award&apos;s <code>submissionId</code> among the task&apos;s entries sorted by <code>submittedAt</code>. Cached for an hour (2 minutes if the API rate-limited the sample).</li>
           <li>Wallet lookup: tasks and reward posted per <code>requester</code>, and top awards held per <code>primaryAward.workerAddress</code>, per chain.</li>
           <li>Concentration: Lorenz curve and Gini coefficient over tasks per requester.</li>
           {Object.values(s.sameAcrossChains).some(Boolean) ? (

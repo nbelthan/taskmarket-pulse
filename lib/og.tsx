@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { CHAINS, CHAIN_KEYS } from "./api";
 import type { Snapshot } from "./build";
+import type { Race } from "./race";
 import { OUTCOMES, OUTCOME_LABEL } from "./derive";
 import { C, OUTCOME_COLOR } from "./theme";
 import { compact, int, money, pct, utc } from "./format";
@@ -16,7 +17,7 @@ const markData = () => readFile(join(process.cwd(), "assets/taskmarket-mark.png"
 
 type Card = { headline: [string, string]; stats: { v: string; l: string; hot?: boolean }[]; spark?: number[]; bars?: { v: number; color: string; l: string }[] };
 
-function cardFor(view: ViewId | "home", s: Snapshot): Card {
+function cardFor(view: ViewId | "home", s: Snapshot, race: Race | null): Card {
   const t = s.chains.tempo;
   const b = s.chains.base;
   const sum = (f: (k: "tempo" | "base") => number) => CHAIN_KEYS.reduce((a, k) => a + f(k), 0);
@@ -33,6 +34,19 @@ function cardFor(view: ViewId | "home", s: Snapshot): Card {
         ],
         bars: OUTCOMES.map((o) => ({ v: sum((k) => s.chains[k].byOutcome[o].reward), color: OUTCOME_COLOR[o], l: OUTCOME_LABEL[o] })),
       };
+    case "race": {
+      const c = race?.chains.tempo ?? race?.chains.base ?? null;
+      const fmt = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 172800 ? `${(sec / 3600).toFixed(1)} h` : `${(sec / 86400).toFixed(1)} d`);
+      return {
+        headline: ["Do early entries", "win?"],
+        stats: [
+          { v: c?.firstQuarterShare != null ? pct(c.firstQuarterShare) : "—", l: "of winners were in the first quarter to arrive", hot: true },
+          { v: c?.decision ? fmt(c.decision.median) : "—", l: "median time to a decision" },
+          { v: c?.firstEntry ? fmt(c.firstEntry.median) : "—", l: "median wait for the first entry" },
+        ],
+        bars: c ? c.winnerQuarters.map((v, i) => ({ v, color: i === 0 ? C.paper : C.muted, l: `q${i + 1}` })) : undefined,
+      };
+    }
     case "pay": {
       const k = t.pay.winners >= b.pay.winners ? "tempo" : "base";
       const p = s.chains[k].pay;
@@ -137,7 +151,7 @@ function cardFor(view: ViewId | "home", s: Snapshot): Card {
   }
 }
 
-export async function renderCard(view: ViewId | "home", s: Snapshot) {
+export async function renderCard(view: ViewId | "home", s: Snapshot, race: Race | null = null) {
   const [mark, serif, serifItalic, sans500, sans700, mono] = await Promise.all([
     markData(),
     font("InstrumentSerif-Regular.ttf"),
@@ -146,7 +160,7 @@ export async function renderCard(view: ViewId | "home", s: Snapshot) {
     font("InterTight-700.ttf"),
     font("DepartureMono-Regular.otf"),
   ]);
-  const card = cardFor(view, s);
+  const card = cardFor(view, s, race);
   const label = view === "home" ? "Live market data" : VIEWS[view].title;
   const spark = card.spark?.length ? card.spark : null;
   const max = spark ? Math.max(1, ...spark) : 1;
@@ -211,11 +225,11 @@ export async function renderCard(view: ViewId | "home", s: Snapshot) {
 }
 
 /** Cached PNG bytes for a card, so share images are as fast as the page. */
-export async function cardPng(view: ViewId | "home", s: Snapshot): Promise<Uint8Array> {
+export async function cardPng(view: ViewId | "home", s: Snapshot, race: Race | null = null): Promise<Uint8Array> {
   "use cache";
   const { cacheLife } = await import("next/cache");
   cacheLife({ stale: 60, revalidate: 600, expire: 60 * 60 * 24 * 7 });
-  const res = await renderCard(view, s);
+  const res = await renderCard(view, s, race);
   return new Uint8Array(await res.arrayBuffer());
 }
 

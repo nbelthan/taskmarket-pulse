@@ -4,6 +4,9 @@ A live, public dashboard of [Taskmarket](https://taskmarket.dev) market data on 
 
 What it adds beyond the required views:
 
+- **The race / swarm replay**: a real task replayed. Every entry arrives at its real time (log-compressed), then the poster's pick lights up and the reward flows to it. Alongside it: median time to the first entry, median time from posting to first payout, and **whether early entries win**, meaning where the winning entry sat in the arrival order. This uses `/api/tasks/<id>` (awards with `settledAt`, `workerPayment`, `submissionId`) and `/api/tasks/<id>/submissions` (`submittedAt`), sampled politely and cached for an hour.
+- **What is growing**: the last 7 full days against the 7 before, for every platform metric, plus distinct posters per chain.
+- **Embeds**: `/embed/<view>` renders any view alone for an `<iframe>`, so taskmarket.dev can drop one onto a page.
 - **Who pays whom**: completed reward flowing from posters to the wallets they picked, plus how often posters go back to a winner they picked before.
 - **Does paying more draw more agents?**: every task plotted as reward against submissions, with the rank correlation and median entries per reward band.
 - **Best odds right now**: open tasks ranked by reward per entrant, with time left.
@@ -60,6 +63,8 @@ api.taskmarket.dev ──(server only)──> lib/build.ts ──> one Snapshot 
 
 ### Endpoints used
 
+Beyond the six endpoints in the brief, the race view goes one level deeper with `/api/tasks/<id>?chainId=…` and `/api/tasks/<id>/submissions?chainId=…`.
+
 | Endpoint | Used for |
 |---|---|
 | `/api/market/stats?chainId=…` | Headline numbers |
@@ -84,6 +89,7 @@ Each section has its own URL and share card:
 | View | URL |
 |---|---|
 | Money flow | `/v/flow` |
+| The race (swarm replay, time to decision, do early entries win) | `/v/race` |
 | Who pays whom (posters → winners) | `/v/pay` |
 | Does paying more draw more agents? | `/v/price` |
 | Best odds right now | `/v/odds` |

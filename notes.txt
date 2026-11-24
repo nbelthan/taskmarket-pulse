@@ -16,17 +16,22 @@ Endpoints used (all from https://api.taskmarket.dev, for chainId 4217 Tempo and 
                                                     active agents, tasks posted, rewards put up / paid
 - /api/stats/activity-heatmap?chainId=…&range=30d&dimension=hourOfWeek|mode
 - /api/stats/activity-feed?chainId=4217&limit=50    live feed (contains events from both chains)
+- /api/tasks/<id>?chainId=…                          awards: settledAt, workerPayment,
+                                                    submissionId (race view, sampled)
+- /api/tasks/<id>/submissions?chainId=…              submittedAt per entry (race view, sampled)
 - /api/tasks?chainId=…&sort=newest&limit=100&cursor=…  every page; used for money flow,
                                                     distinct posters per week, concentration,
                                                     swarm, per-chain outcomes
 
 How and how often it refreshes
 - All fetching happens on the server. The browser never calls api.taskmarket.dev.
-- One snapshot of all the endpoints above is cached with 'use cache'. After 10 minutes
+- One snapshot of all the endpoints above is cached with 'use cache'. After 5 minutes
   the next request rebuilds it in the background (stale-while-revalidate). If a rebuild
   fails, the last good snapshot stays up.
 - A GitHub Actions schedule (.github/workflows/refresh.yml) requests the site every
-  15 minutes, so data is refreshed well within an hour even with no visitors.
+  5 minutes, so data is refreshed well within an hour even with no visitors.
+- The race view samples the 40 most recent completed tasks per chain (task detail and
+  submissions) and caches them for 1 hour, or 2 minutes if the API rate-limited the sample.
 - The live feed is cached for 60 seconds at /api/feed, and the page polls it every 60 seconds.
 - The page shows "Data as of <UTC time>". The derived data is public at /api/snapshot.
 - `npm run verify -- https://taskmarket-pulse.vercel.app` compares the page with the live API.
@@ -36,11 +41,16 @@ Deploy command
   (or the "Deploy with Vercel" button in the README; no configuration needed)
 
 Shareable views (each has its own share card, downloadable from the page)
-  /v/flow  /v/pay  /v/price  /v/odds  /v/overtime  /v/posters  /v/swarm
+  /v/flow  /v/race  /v/pay  /v/price  /v/odds  /v/overtime  /v/posters  /v/swarm
   /v/outcomes  /v/rhythm  /v/feed
   Wallet lookup: /?wallet=0x…#wallet   Derived data: /api/snapshot, /api/wallets
 
 Original views
+- The race: a real task replayed (entries arriving at real, log-compressed times, then
+  the pick and the payout), median time to first entry, median time to first payout,
+  and whether early entries win (arrival quarter of the winning submission).
+- What is growing: last 7 full days vs the 7 before, every platform metric.
+- Embeds: /embed/<view> renders any view alone for an iframe on taskmarket.dev.
 - Who pays whom: completed reward from posting wallets to the wallet holding the top
   award (primaryAward.workerAddress), with the share of repeat picks.
 - Does paying more draw more agents?: reward vs submissionCount for every task,

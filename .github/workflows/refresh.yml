@@ -4,7 +4,7 @@
 name: refresh
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 jobs:
   ping:
@@ -13,6 +13,6 @@ jobs:
     steps:
       - name: Request pages so stale snapshots rebuild
         run: |
-          for p in / /api/snapshot /api/feed /v/flow /v/overtime /v/posters /v/swarm /v/outcomes /v/rhythm /v/feed; do
+          for p in / /api/snapshot /api/feed /v/flow /v/race /v/pay /v/price /v/odds /v/overtime /v/posters /v/swarm /v/outcomes /v/rhythm /v/feed; do
             curl -fsS -o /dev/null -w "$p %{http_code} %{time_total}s\n" "${{ vars.SITE_URL }}$p" || true
           done

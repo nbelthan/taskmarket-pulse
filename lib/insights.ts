@@ -2,6 +2,7 @@
 // every figure below is computed from the same snapshot the charts use.
 import { CHAINS, CHAIN_KEYS, type ChainKey } from "./api";
 import type { Snapshot } from "./build";
+import type { Race } from "./race";
 import { money, pct, int } from "./format";
 
 export type Insight = { id: string; view: string; kicker: string; text: string; figure: string };
@@ -14,8 +15,32 @@ function lastFullWeeks(s: Snapshot, k: ChainKey) {
   return { prev: full.at(-2), last: full.at(-1), thisWeek };
 }
 
-export function insights(s: Snapshot): Insight[] {
+export function insights(s: Snapshot, race: Race | null = null): Insight[] {
   const out: Insight[] = [];
+
+  // 0. The race: do early entries win, and how long posters take to decide.
+  const rc = race ? CHAIN_KEYS.map((k) => ({ k, c: race.chains[k] })).filter((x) => x.c && x.c.firstQuarterShare !== null) : [];
+  const early = rc.sort((a, b) => (b.c!.sample ?? 0) - (a.c!.sample ?? 0))[0];
+  if (early?.c) {
+    out.push({
+      id: "early",
+      view: "race",
+      kicker: "Do early entries win?",
+      figure: pct(early.c.firstQuarterShare!),
+      text: `of winning entries on recent ${CHAINS[early.k].name} tasks were in the first quarter to arrive, against about 25% if arrival order did not matter.`,
+    });
+  }
+  const decs = rc.filter((x) => x.c!.decision);
+  if (decs.length) {
+    const fmt = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 172800 ? `${(sec / 3600).toFixed(1)} h` : `${(sec / 86400).toFixed(1)} days`);
+    out.push({
+      id: "decision",
+      view: "race",
+      kicker: "Time to a decision",
+      figure: fmt(decs[0].c!.decision!.median),
+      text: `median from posting to first payout on ${CHAINS[decs[0].k].name}; the first entry lands after ${fmt(decs[0].c!.firstEntry?.median ?? 0)}.${decs[1] ? ` On ${CHAINS[decs[1].k].name}: ${fmt(decs[1].c!.decision!.median)} to decide, ${fmt(decs[1].c!.firstEntry?.median ?? 0)} to the first entry.` : ""}`,
+    });
+  }
   const t = s.chains.tempo;
   const b = s.chains.base;
 

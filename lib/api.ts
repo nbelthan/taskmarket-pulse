@@ -74,6 +74,18 @@ export type RawTask = {
   expiryTime: string | null;
 };
 
+export type Award = {
+  workerAddress: string;
+  rank: number | null;
+  isPrimary: boolean;
+  grossAmount: string | null;
+  workerPayment: string | null;
+  settledAt: string | null;
+  submissionId: string | null;
+};
+export type TaskDetail = RawTask & { awards: Award[] | null };
+export type Submission = { id: string; submittedAt: string; workerAddress: string; rejectedAt: string | null };
+
 // ---------- fetching ----------
 async function getJSON<T>(path: string, attempt = 0): Promise<T> {
   const url = `${API_BASE}${path}`;
@@ -82,10 +94,16 @@ async function getJSON<T>(path: string, attempt = 0): Promise<T> {
       headers: { accept: "application/json", "user-agent": "taskmarket-pulse (open-source dashboard)" },
       signal: AbortSignal.timeout(15_000),
     });
+    if (res.status === 429 && attempt < 5) {
+      // Rate limited: honour Retry-After when given, else back off exponentially.
+      const ra = Number(res.headers.get("retry-after"));
+      await new Promise((r) => setTimeout(r, Number.isFinite(ra) && ra > 0 ? ra * 1000 : 800 * 2 ** attempt));
+      return getJSON<T>(path, attempt + 1);
+    }
     if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${path}`);
     return (await res.json()) as T;
   } catch (err) {
-    if (attempt < 2) {
+    if (attempt < 2 && !(err instanceof Error && /^4\d\d /.test(err.message))) {
       await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
       return getJSON<T>(path, attempt + 1);
     }
@@ -101,6 +119,11 @@ export const api = {
   heatmap: (chainId: number, dimension: "hourOfWeek" | "mode", range = "30d") =>
     getJSON<Heatmap>(`/api/stats/activity-heatmap?chainId=${chainId}&range=${range}&dimension=${dimension}`),
   feed: (chainId: number, limit = 50) => getJSON<Feed>(`/api/stats/activity-feed?chainId=${chainId}&limit=${limit}`),
+  tasksPage: (chainId: number, status: string, limit = 100) =>
+    getJSON<{ tasks: RawTask[] }>(`/api/tasks?chainId=${chainId}&status=${status}&sort=newest&limit=${limit}`).then((d) => d.tasks),
+  task: (chainId: number, id: string) =>
+    getJSON<TaskDetail | { task: TaskDetail }>(`/api/tasks/${id}?chainId=${chainId}`).then((d) => ("task" in d ? d.task : d)),
+  submissions: (chainId: number, id: string) => getJSON<Submission[]>(`/api/tasks/${id}/submissions?chainId=${chainId}`),
   /** Every task on a chain, newest first, following the cursor to the end. */
   async allTasks(chainId: number): Promise<RawTask[]> {
     const out: RawTask[] = [];
